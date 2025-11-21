@@ -29,17 +29,15 @@ powersAndDispowers = ["bonus_0004.png","bonus_0001.png","bonus_0002.png","bonus_
  *  1️⃣  Initialise the GIF parser
  *  ------------------------------------------------ */
 const myGif = GIF();                     // create the parser object
+console.log('🛠️  GIF object created', myGif);
 myGif.waitTillDone = false;              // fire onload after the FIRST frame
-myGif.onload = () => {
-    console.log('✅ GIF loaded – size:', myGif.width, myGif.height);
-    startAnimation();                    // start the wave only after GIF ready
-};
+
 myGif.onerror = e => console.error('❌ GIF load error:', e);
 
 const incoming = powersAndDispowers.map(i => {
     if (i.includes(".gif")){
-        const img = new Gif();
-        myGif.load(i);
+        const img = new GIF();
+        img.load(i);
         return img;
     }else{
         const img = new Image();
@@ -47,6 +45,7 @@ const incoming = powersAndDispowers.map(i => {
         return img;
     }
 });
+console.log('🛠️  array object created', incoming);
 /* ---
 
 function finishGame(){
@@ -79,15 +78,15 @@ function collectCoin(){
     }
 }*/
 const imgs = [];
-function spawnImg() {
-    const img = incoming[Math.floor(Math.random() * incoming.length)];
-    const scale = Math.random() * 1 + 0.5;
-    const baseSpeed = 2;                     // pixels per frame
-    const speed = -(baseSpeed / scale);      // negative → leftward
-    const startX = canvas.width + img.width * scale;
-    const offset = Math.random() * Math.PI * 2;
-    imgs.push({ img, x: startX, scale, speed, offset });
-}
+// function spawnImg() {
+//     const img = incoming[Math.floor(Math.random() * incoming.length)];
+//     const scale = Math.random() * 1 + 0.5;
+//     const baseSpeed = 2;                     // pixels per frame
+//     const speed = -(baseSpeed / scale);      // negative → leftward
+//     const startX = canvas.width + img.width * scale;
+//     const offset = Math.random() * Math.PI * 2;
+//     imgs.push({ img, x: startX, scale, speed, offset });
+// }
 
 /* -------------------------------------------------
  *  2️⃣  Core animation – runs after GIF is ready
@@ -97,8 +96,8 @@ function startAnimation() {
     const ctx    = canvas.getContext('2d');
     myGif.load(colors[level][0]);           // <-- adjust path if needed
 
-    canvas.style.backgroundColor = colors[level][1] + "11";
-
+    canvas.style.backgroundColor = colors[level][1] + "22";
+    console.log('🛠️  animation created');
     // -------------------------------------------------
     // If the GIF is tiny you probably want to scale it.
     // Change this factor to suit your art (1 = original size).
@@ -125,9 +124,9 @@ function startAnimation() {
         const targetAmp  = getRndFloat(10, 150);
         const targetFreq = getRndFloat(0.001, 0.01);
         const targetSpd = getRndFloat(0.01, 0.1);
-        amp  = interpolate(amp,  targetAmp,  0.05);
-        freq = interpolate(freq, targetFreq, 0.05);
-        spd  = interpolate(spd,  targetSpd,  0.05);
+        amp  = interpolate(amp,  targetAmp,  0.005);
+        freq = interpolate(freq, targetFreq, 0.005);
+        spd  = interpolate(spd,  targetSpd,  0.005);
     }
     setInterval(changeWave, 250); // keep the wave morphing
 
@@ -136,8 +135,10 @@ function startAnimation() {
     // The animation loop
     // -------------------------------------------------
     function render() {
+        console.log('🔁 render tick – myGif.image?', !!myGif.image);
         // ---- 0️⃣ Guard – make sure the GIF frame exists ----------
         if (!myGif.image) {
+
             // GIF not ready yet – skip this frame but keep the loop alive
             requestAnimationFrame(render);
             return;
@@ -198,12 +199,11 @@ function startAnimation() {
     console.log('🚀 Starting animation loop');
     requestAnimationFrame(render);
 }
+startAnimation();
 
 window.addEventListener('keypress', e => {
     console.log(e.code);
     if (e.code === 'KeyW' || e.code === 'Space' || e.code === 'ArrowUp') {
-        //console.log('⏸️ Toggling GIF playback');
-        //myGif.togglePlay();   // pauses or resumes the GIF frames
        if(jumpHeight <= 3) jumpHeight = 60;
     }
 });
