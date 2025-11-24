@@ -1,7 +1,3 @@
-/* ========================================
- L u*mo‑Surf Animation – clean, modular version
- ============================================================== */
-
 /* ------------------------------------------------------------
  1 ️*⃣ Configuration – colours / skins
  -------------------------------------------------------------- */
@@ -58,35 +54,66 @@ const utils = {
     }
 };
 
-/* -----------------------------------------------
- 3 ️*⃣ GIF manager – loads a GIF once and re‑uses the parsed image
- -------------------------------------------- */
+/* -----------------------------------------
+ *  GifManager – works with the gifparse.js library you uploaded
+ *  ------------------------------------------------------------- */
+/* -------------------------------------------------
+ *  GifManager – returns a sprite whose .image updates
+ *  automatically as the GIF plays.
+ *  ------------------------------------------------ */
 class GifManager {
     constructor() {
-        this.parser = GIF();                 // global GIF parser instance
-        this.parser.waitTillDone = false;    // fire onload after first frame
-        this.current = null;                 // reference used by renderer
-        this.loading = false;
+        // url → { gifObj, getImage() }
+        this.cache   = new Map();
+        this.current = null;               // sprite currently displayed
     }
 
-    async load(url) {
-        if (this.loading) return;
-        this.loading = true;
+    /**
+     * Load (or retrieve from cache) a GIF and start its playback.
+     * Resolves to an object exposing a getter `image` that always
+     * returns the *current* frame canvas.
+     */
+    async preload(url) {
+        if (this.cache.has(url)) return this.cache.get(url);
+
+        const gif = GIF();                 // the object from gifparse.js
+        gif.waitTillDone = false;          // fire onload after first frame
+        gif.playOnLoad   = false;          // we’ll start playback ourselves
 
         return new Promise((resolve, reject) => {
-            this.parser.onload = () => {
-                this.current = this.parser;
-                this.loading = false;
-                resolve(this.parser);
+            gif.onload = () => {
+                // First frame is ready – start the animation loop
+                gif.play();               // <-- this makes the library cycle frames
+
+                // Build a thin wrapper that always returns the *current* canvas
+                const sprite = {
+                    /** Getter – the renderer will call sprite.image each frame */
+                    get image() { return gif.image; },
+
+                           /** Width / height of the GIF (constant) */
+                           get width()  { return gif.width; },
+                           get height() { return gif.height; },
+
+                           /** Expose the raw gif object if you ever need it */
+                           _gif: gif
+                };
+
+                this.cache.set(url, sprite);
+                resolve(sprite);
             };
-            this.parser.onerror = err => {
-                this.loading = false;
-                reject(err);
-            };
-            this.parser.load(url);
+            gif.onerror = reject;
+            gif.load(url);                 // start the XHR + parsing
         });
     }
 
+    /** Public API used by the game – guarantees a ready sprite */
+    async load(url) {
+        const sprite = await this.preload(url);
+        this.current = sprite;       // mark as the active skin
+        return sprite;
+    }
+
+    /** Renderer accesses this */
     get sprite() { return this.current; }
 }
 
@@ -114,7 +141,7 @@ class WaveEngine {
 
     /** Return a level index based on the current frequency */
     levelFromFreq() {
-        const f = this.freq * 1000; // scale to a more convenient range
+        const f = this.amp ; // scale to a more convenient range
         if (f > 75) return 5;
         if (f > 50) return 4;
         if (f > 30) return 3;
@@ -128,6 +155,69 @@ class WaveEngine {
     }
     /** Advance the phase – called each render tick */
     step() { this.phase += this.spd; }
+}
+
+/* -------------------------------------------------------
+ *  4.5 Obstacle – holds image, position and simple movement
+ *  ------------------------------------------------------- */
+class Obstacle {
+    constructor(imgUrl, x) {
+        this.url = imgUrl;           // path to the PNG/GIF
+        this.x = x;                  // start X (off‑screen right)
+        this.loaded = false;         // flag once the image is ready
+        this.img = new Image();
+        this.img.onload = () => {
+            this.w = this.img.width * Obstacle.SCALE;
+            this.h = this.img.height * Obstacle.SCALE;
+            this.loaded = true;
+        };
+        this.img.src = imgUrl;
+    }
+
+    static SCALE = 1.5;               // same scale used for the surfer
+
+    /** Move left according to the current wave speed */
+    update(speed) {
+        this.x -= speed;               // speed comes from GameState.speed
+    }
+
+    /** Render if the image is ready */
+    draw(ctx, wave, dudeX, jumpHeight) {
+        if (!this.loaded) return;
+
+        // Compute Y exactly like the surfer does (wave height at this X)
+        const y = wave.canvasHeight / 2 +
+        wave.amp * Math.sin(wave.freq * this.x + wave.phase);
+
+        // Optional: rotate to match wave slope (like surfer)
+        const ny = wave.canvasHeight / 2 +
+        wave.amp * Math.sin(wave.freq * (this.x + 1) + wave.phase);
+        const angle = Math.atan2(ny - y, 1);
+
+        ctx.save();
+        ctx.translate(this.x, y - jumpHeight);
+        ctx.rotate(angle);
+        ctx.drawImage(
+            this.img,
+            -(this.w / 2),
+                      -this.h,
+                      this.w,
+                      this.h
+        );
+        ctx.restore();
+    }
+
+    /** Bounding box for collision detection */
+    getBox(wave, jumpHeight) {
+        const y = wave.canvasHeight / 2 +
+        wave.amp * Math.sin(wave.freq * this.x + wave.phase);
+        return {
+            x: this.x - this.w / 2,
+            y: y - this.h - jumpHeight,
+            w: this.w,
+            h: this.h
+        };
+    }
 }
 
 /* -------------------------------------------
@@ -223,112 +313,112 @@ class GameState {
         );
         ctx.restore();
     }
-    addObstacle(){
-        if (obstacles.length <= 2){
+    addObstacle(renderer){
+        if (obstacles.length < 2){
         switch(this.level){
             case 0:
-                switch(Math.floor(Math.random * 3)){
+                switch(Math.floor(Math.random() * 3)){
                     case 0:
-                        obstacles.push(objects.coin);
+                        obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
                         break;
                     case 1:
                         break;
                     case 2:
-                        obstacles.push(objects.spike)
+                        obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
                 }
                 break;
             case 1:
-                switch(Math.floor(Math.random * 5)){
+                switch(Math.floor(Math.random() * 5)){
                     case 0:
-                        obstacles.push(objects.coin);
+                        obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
                         break;
                     case 1:
                     case 2:
                         break;
                     case 3:
-                        obstacles.push(objects.spike);
+                        obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
                         break;
                     case 4:
-                        obstacles.push(objects.slowdown);
+                        obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
                         break;
                 }
                 break;
             case 2:
-                switch(Math.floor(Math.random * 7)){
+                switch(Math.floor(Math.random() * 7)){
                     case 0:
-                        obstacles.push(objects.coin);
+                        obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
                         break;
                     case 1:
                     case 2:
                         break;
                     case 3:
                     case 4:
-                        obstacles.push(objects.spike);
+                        obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
                         break;
                     case 5:
-                        obstacles.push(objects.slowdown);
+                        obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
                         break;
                     case 6:
-                        obstacles.push(objects.speedup);
+                        obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
                         break;
                 }
                 break;
             case 3:
-                switch(Math.floor(Math.random * 9)){
+                switch(Math.floor(Math.random() * 9)){
                     case 0:
                     case 1:
-                        obstacles.push(objects.coin);
+                        obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
                         break;
                     case 2:
                     case 3:
                         break;
                     case 4:
                     case 5:
-                        obstacles.push(objects.spike);
+                        obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
                         break;
                     case 6:
-                        obstacles.push(objects.slowdown);
+                        obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
                         break;
                     case 7:
-                        obstacles.push(objects.speedup);
+                        obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
                         break;
                     case 8:
-                        obstacles.push(objects.checkpoint);
+                        obstacles.push(new Obstacle(objects.checkpoint, renderer.canvas.width + 50));
                         break;
                 }
                 break;
             case 4:
-                switch(Math.floor(Math.random * 11)){
+                switch(Math.floor(Math.random() * 11)){
                     case 0:
                     case 1:
-                        obstacles.push(objects.coin);
+                        obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
                         break;
                     case 2:
                     case 3:
                         break;
                     case 4:
                     case 5:
-                        obstacles.push(objects.spike);
+                        obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
                         break;
                     case 6:
-                        obstacles.push(objects.slowdown);
+                        obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
                         break;
                     case 7:
                     case 8:
-                        obstacles.push(objects.speedup);
+                        obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
                         break;
                     case 9:
-                        obstacles.push(objects.checkpoint);
+                        obstacles.push(new Obstacle(objects.checkpoint, renderer.canvas.width + 50));
                         break;
                     case 10:
-                        obstacles.push(objects.tempPause);
+                        obstacles.push(new Obstacle(objects.tempPause, renderer.canvas.width + 50));
                         break;
                 }
                 break;
             case 5:
-                switch(Math.floor(Math.random * 11)){
+                switch(Math.floor(Math.random() * 11)){
                     case 0:
-                        obstacles.push(objects.coin);
+                        obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
                         break;
                     case 2:
                     case 3:
@@ -336,25 +426,156 @@ class GameState {
                     case 4:
                     case 5:
                     case 6:
-                        obstacles.push(objects.spike);
+                        obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
                         break;
                     case 7:
                     case 8:
-                        obstacles.push(objects.slowdown);
+                        obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
                         break;
                     case 9:
                     case 10:
-                        obstacles.push(objects.speedup);
+                        obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
                         break;
                     case 11:
-                        obstacles.push(objects.checkpoint);
+                        obstacles.push(new Obstacle(objects.checkpoint, renderer.canvas.width + 50));
                         break;
                     case 12:
-                        obstacles.push(objects.tempPause);
+                        obstacles.push(new Obstacle(objects.tempPause, renderer.canvas.width + 50));
                         break;
                 }
                 break;
         }
+        switch(this.level){
+            case 0:
+                switch(Math.floor(Math.random() * 3)){
+                    case 0:
+                        obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
+                        break;
+                    case 1:
+                        break;
+                    case 2:
+                        obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
+                }
+                break;
+                case 1:
+                    switch(Math.floor(Math.random() * 5)){
+                        case 0:
+                            obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
+                            break;
+                        case 1:
+                        case 2:
+                            break;
+                        case 3:
+                            obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
+                            break;
+                        case 4:
+                            obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
+                            break;
+                    }
+                    break;
+                case 2:
+                    switch(Math.floor(Math.random() * 7)){
+                        case 0:
+                            obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
+                            break;
+                        case 1:
+                        case 2:
+                            break;
+                        case 3:
+                        case 4:
+                            obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
+                            break;
+                        case 5:
+                            obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
+                            break;
+                        case 6:
+                            obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
+                            break;
+                    }
+                    break;
+                case 3:
+                    switch(Math.floor(Math.random() * 9)){
+                        case 0:
+                        case 1:
+                            obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
+                            break;
+                        case 2:
+                        case 3:
+                            break;
+                        case 4:
+                        case 5:
+                            obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
+                            break;
+                        case 6:
+                            obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
+                            break;
+                        case 7:
+                            obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
+                            break;
+                        case 8:
+                            obstacles.push(new Obstacle(objects.checkpoint, renderer.canvas.width + 50));
+                            break;
+                    }
+                    break;
+                case 4:
+                    switch(Math.floor(Math.random() * 11)){
+                        case 0:
+                        case 1:
+                            obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
+                            break;
+                        case 2:
+                        case 3:
+                            break;
+                        case 4:
+                        case 5:
+                            obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
+                            break;
+                        case 6:
+                            obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
+                            break;
+                        case 7:
+                        case 8:
+                            obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
+                            break;
+                        case 9:
+                            obstacles.push(new Obstacle(objects.checkpoint, renderer.canvas.width + 50));
+                            break;
+                        case 10:
+                            obstacles.push(new Obstacle(objects.tempPause, renderer.canvas.width + 50));
+                            break;
+                    }
+                    break;
+                case 5:
+                    switch(Math.floor(Math.random() * 11)){
+                        case 0:
+                            obstacles.push(new Obstacle(objects.coin, renderer.canvas.width + 50));
+                            break;
+                        case 2:
+                        case 3:
+                            break;
+                        case 4:
+                        case 5:
+                        case 6:
+                            obstacles.push(new Obstacle(objects.spike, renderer.canvas.width + 50));
+                            break;
+                        case 7:
+                        case 8:
+                            obstacles.push(new Obstacle(objects.slowdown, renderer.canvas.width + 50));
+                            break;
+                        case 9:
+                        case 10:
+                            obstacles.push(new Obstacle(objects.speedup, renderer.canvas.width + 50));
+                            break;
+                        case 11:
+                            obstacles.push(new Obstacle(objects.checkpoint, renderer.canvas.width + 50));
+                            break;
+                        case 12:
+                            obstacles.push(new Obstacle(objects.tempPause, renderer.canvas.width + 50));
+                            break;
+                    }
+                    break;
+        }
+        }else{
         }
     }
     rectOverlap(a, b) {
@@ -366,18 +587,13 @@ class GameState {
     checkCollision(renderer, wave, state) {
         const { canvas, dudeX, GIF_SCALE } = renderer;
         const sprite = renderer.gifMgr.sprite;
-        if (!sprite?.image) return false;   // nothing loaded yet
+        if (!sprite?.image) return false;
 
-        // -- surfer’s foot position (same math as drawSurfer) ----
         const surferBottomY =
         canvas.height / 2 +
         wave.amp * Math.sin(wave.freq * dudeX + wave.phase) -
-        state.jumpHeight;                  // include jump offset
+        state.jumpHeight;
 
-        // ---- exact wave height at that X ----------------
-        const waveY = wave.heightAt(dudeX);
-
-        // obstacle check
         const surferBox = {
             x: dudeX - (sprite.width * GIF_SCALE) / 2,
             y: surferBottomY - (sprite.height * GIF_SCALE),
@@ -385,7 +601,8 @@ class GameState {
             h: sprite.height * GIF_SCALE
         };
 
-        return obstacles.some(ob => this.rectOverlap(surferBox, ob));
+        // Test each obstacle’s box
+        return obstacles.some(obs => this.rectOverlap(surferBox, obs.getBox(wave, state.jumpHeight)));
     }
 }
 
@@ -435,6 +652,7 @@ class Renderer {
     drawSurfer() {
         const { ctx, canvas, wave, state, dudeX, GIF_SCALE } = this;
         const sprite = this.gifMgr.sprite;
+        console.log('Sprite at draw:', sprite);
         if (!sprite?.image) return; // safety – should never happen
 
         const y  = canvas.height / 2 + wave.amp * Math.sin(wave.freq * dudeX + wave.phase);
@@ -454,6 +672,12 @@ class Renderer {
         ctx.restore();
     }
 
+    drawObstacles() {
+        const { ctx, wave, state, dudeX, GIF_SCALE } = this;
+        obstacles.forEach(obs => {
+            obs.draw(ctx, wave, dudeX, state.jumpHeight);
+        });
+    }
     /** One full render pass */
     render() {
         const { ctx, canvas, state } = this;
@@ -465,6 +689,7 @@ class Renderer {
         // draw components
         this.drawWave();
         this.drawSurfer();
+        this.drawObstacles();
     }
 }
 
@@ -503,9 +728,14 @@ class InputHandler {
  8 ️*⃣ Bootstrap – glue everything together
  -------------------------------------------------------------- */
 (async function main() {
+    // ---------- 1️⃣ PRE‑LOAD ALL SKINS ----------
     const canvas = document.getElementById('waveCanvas');
     const fpsEl  = document.getElementById('fps');
     const coinEl = document.getElementById('coins');
+    const frqEl = document.getElementById('frq');
+    const spdEl = document.getElementById('spd');
+    const ampEl = document.getElementById('amp');
+    const lvEl = document.getElementById('lvl');
     // instantiate core objects
     const gifMgr   = new GifManager();
     const wave     = new WaveEngine();
@@ -514,7 +744,12 @@ class InputHandler {
     const renderer = new Renderer(canvas, gifMgr, wave, game);
     const input    = new InputHandler(game);
     const fpsMeter = utils.createFPSMeter(fpsEl);
-
+    try {
+        await Promise.all(CONFIG.skins.map(skin => gifMgr.preload(skin[0])));
+    } catch (e) {
+        console.error('❌ Pre‑load failed:', e);
+        // you can fall back to a placeholder image or abort early
+    }
     // ------------------------------------------------------------------
     // Load the initial skin (level 0) before starting the loop
     // ------------------------------------------------------------------
@@ -526,13 +761,17 @@ class InputHandler {
     // ------------------------------------------------------------------
     setInterval(() => {
         wave.morph();
-        // adapt level based on frequency (automatically changes skin)
         const newLevel = wave.levelFromFreq();
+
         if (newLevel !== game.level) {
             game.level = newLevel;
-            gifMgr.load(CONFIG.skins[newLevel][0]).catch(console.error);
-            renderer.updateBackground();
+            // Still a promise, so we can attach .catch()
+            gifMgr.load(CONFIG.skins[newLevel][0])
+            .then(() => renderer.updateBackground())
+            .catch(console.error);
         }
+        obstacles = [];
+        game.addObstacle && game.addObstacle(renderer);
     }, 250);
 
     // ------------------------------------------------------------------
@@ -540,9 +779,18 @@ class InputHandler {
     // ------------------------------------------------------------------
     function tick() {
         fpsMeter.tick();          // update FPS display
-        coinEl.innerText = game.coins;
+        coinEl.innerText = game.coins; //debug lines
+        frqEl.innerText = wave.freq;
+        spdEl.innerText = wave.spd;
+        ampEl.innerText = wave.amp;
+        lvEl.innerText = game.level; // end of debug lines
         wave.step();              // advance phase
         game.decayJump();         // handle jump decay
+        obstacles.forEach((obs, idx) => {
+            obs.update(game.speed);                     // move left
+            // Remove once completely off‑screen left
+            if (obs.x + obs.w < 0) obstacles.splice(idx, 1);
+        });
         for(i in game.checkCollision(renderer, wave, canvas)) {
             console.log(i);
             game.finishGame("dead");
