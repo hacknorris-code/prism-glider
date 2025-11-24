@@ -243,7 +243,7 @@ class Obstacle {
         const angle = Math.atan2(ny - y, 1);
 
         ctx.save();
-        ctx.translate(this.x, y +7);
+        ctx.translate(this.x, y -14);
         ctx.rotate(angle);
         ctx.drawImage(
             this.img,
@@ -276,7 +276,7 @@ class GameState {
         this.coins = 0;
         this.level = 0;
         this.playing = true;
-        this.jumpMaxHeight = 60;
+        this.jumpMaxHeight = 75;
         this.jumpHeight = 0;   // pixel offset while jumping
         this.jumped = false;
         this.speed = 1;
@@ -330,10 +330,14 @@ class GameState {
 
     /** Called when the player presses a jump key */
     triggerJump() {
-//         if (jumped){
-//
-//         }
-        if (this.jumpHeight <= 3 /*&& jumped*/) this.jumpHeight = 60;
+        if (this.jumped && this.jumpHeight < this.jumpMaxHeight){
+            this.jumpHeight +=1;
+        }else if(this.jumped && this.jumpHeight >= this.jumpMaxHeight){
+            this.jumped = false;
+            this.jumpHeight -=1;
+        }else if (this.jumpHeight >= 1 && !this.jumped){
+            this.jumpHeight -=1;
+        }
     }
 
     /** Decay the jump height each frame */
@@ -521,7 +525,7 @@ class InputHandler {
 
             // Jump keys
             if (['KeyW', 'Space', 'ArrowUp'].includes(code)) {
-                //game.jumped = true;
+                this.state.jumped = true;
                 this.state.triggerJump();
                 return;
             }
@@ -598,7 +602,7 @@ class InputHandler {
         ampEl.innerText = wave.amp;
         lvEl.innerText = game.level; // end of debug lines
         wave.step();              // advance phase
-        game.decayJump();         // handle jump decay
+        game.triggerJump();         // handle jump decay
         obstacles.forEach((obs, idx) => {
             obs.update(game.speed);                     // move left
             // Remove once completely off‑screen left
@@ -627,6 +631,7 @@ class InputHandler {
                     case 'tempPause':
                         console.log('⏸️ Temporary pause');
                         game.togglePause();                // or a custom pause timer
+                        setTimeout(()=>{game.togglePause()},1000);
                         break;
                     case 'checkpoint':
                         console.log('🏁 Checkpoint saved');
