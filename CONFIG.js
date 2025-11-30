@@ -64,7 +64,7 @@ const LEVEL_TABLE = [
 { obj: OBJECTS.spike,     weight: 2 },
 { obj: OBJECTS.slowdown,  weight: 1 },
 { obj: OBJECTS.speedup,   weight: 1 },
-{ obj: OBJECTS.checkpoint,weight: 1 }
+{ obj: OBJECTS.life,      weight: 1 }
 ],
 
 // level 4
