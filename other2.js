@@ -6,14 +6,14 @@ let morphTimer = null;
 let obstacleTimer = null;
 
 /* --------------------------------------------------------
- 2 ️*⃣ Utility helpers
+ 1 ️smaller utils *
  -------------------------------------------------------------- */
 const utils = {
     rndFloat(min, max) { return Math.random() * (max - min) + min; },
 
     lerp(cur, tgt, fac) { return cur + (tgt - cur) * fac; },
 
-    /** Simple FPS logger – writes to #fps element */
+    /** Simple FPS logger – writes to #fps element, if one exists - aka - app is not in debug mode */
     createFPSMeter(targetEl) {
         let last = null, fps = 0;
         const push = v => targetEl.innerText = `fps: ${v}`;
@@ -30,18 +30,14 @@ const utils = {
     }
 };
 
-/* -----------------------------------------
- *  GifManager – works with the gifparse.js library you uploaded
- *  ------------------------------------------------------------- */
 /* -------------------------------------------------
- *  GifManager – returns a sprite whose .image updates
- *  automatically as the GIF plays.
+ *  2 GifManager – returns a sprite whose image updates *
+ *  automatically as the GIF plays. *
  *  ------------------------------------------------ */
 class GifManager {
     constructor() {
-        // url → { gifObj, getImage() }
         this.cache   = new Map();
-        this.current = null;               // sprite currently displayed
+        this.current = null;
     }
 
     /**
@@ -58,19 +54,12 @@ class GifManager {
 
         return new Promise((resolve, reject) => {
             gif.onload = () => {
-                // First frame is ready – start the animation loop
-                gif.play();               // <-- this makes the library cycle frames
-
-                // Build a thin wrapper that always returns the *current* canvas
+                gif.play();
                 const sprite = {
-                    /** Getter – the renderer will call sprite.image each frame */
                     get image() { return gif.image; },
-
-                           /** Width / height of the GIF (constant) */
                            get width()  { return gif.width; },
                            get height() { return gif.height; },
-
-                           /** Expose the raw gif object if you ever need it */
+                           /* Expose the raw gif object if you ever need it */
                            _gif: gif
                 };
 
@@ -78,14 +67,13 @@ class GifManager {
                 resolve(sprite);
             };
             gif.onerror = reject;
-            gif.load(url);                 // start the XHR + parsing
+            gif.load(url);
         });
     }
 
-    /** Public API used by the game – guarantees a ready sprite */
     async load(url) {
         const sprite = await this.preload(url);
-        this.current = sprite;       // mark as the active skin
+        this.current = sprite;
         return sprite;
     }
 
@@ -94,7 +82,7 @@ class GifManager {
 }
 
 /* -------------------------------------------
- 4 ️*⃣ Wave engine – holds amplitude/frequency/speed and morphs them
+ 3 ️ Wave engine – holds amplitude/frequency/speed and morphs them *
  -------------------------------------------------------------- */
 class WaveEngine {
     constructor() {
@@ -134,14 +122,14 @@ class WaveEngine {
 }
 
 /* -------------------------------------------------------
- *  4.5 Obstacle – holds image, position and simple movement
+ *  4 Obstacle – holds image, position and simple movement *
  *  ------------------------------------------------------- */
 class Obstacle {
     constructor(imgUrl, x) {
-        this.url = imgUrl;           // path to the PNG/GIF
+        this.url = imgUrl;
         this.type = Object.keys(CONFIG.objects).find(k => CONFIG.objects[k] === imgUrl);
         this.x = x;                  // start X (off‑screen right)
-        this.loaded = false;         // flag once the image is ready
+        this.loaded = false;
         this.img = new Image();
         this.img.onload = () => {
             this.w = this.img.width * Obstacle.SCALE;
@@ -198,7 +186,7 @@ class Obstacle {
 }
 
 /* -------------------------------------------
- 5 ️*⃣ Game state – coins, level, pause, jump
+ 5 ️*⃣ Game state – coins, level, pause, jump , etc… *
  -------------------------------------------------------------- */
 class GameState {
     constructor() {
@@ -207,17 +195,11 @@ class GameState {
         this.level = 0;
         this.playing = true;
         this.jumpMaxHeight = 75;
-        this.jumpHeight = 0;   // pixel offset while jumping
+        this.jumpHeight = 0;
         this.jumped = false;
         this.speed = 1;
         this._morphTimer    = null;
         this._obstacleTimer = null;
-        this.lastCheckpoint = {
-            amp:0,
-            speed:0.01,
-            phase:0,
-            freq:0
-        };
     }
 
     collectCoin() {
@@ -232,15 +214,6 @@ class GameState {
 
     speedup(){
         this.speed += this.speed * 0.001;
-    }
-
-    saveCheckpoint(a,s,p,f){
-        this.lastCheckpoint = {
-            amp:a,
-            speed:s,
-            phase:p,
-            freq:f
-        }
     }
 
     finishGame(reason) {

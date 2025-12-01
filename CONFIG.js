@@ -1,10 +1,7 @@
 /* ------------------------------------------------------------
- C onfiguration – colours / skins                                   *
+ 1 Configuration – colours / skins                                   *
  -------------------------------------------------------------- */
 
-/* ------------------------------------------------------------------
- 1 ️⃣  Define the reusable parts first                              *
- ------------------------------------------------------------------ */
 const SKINS = [
     ["./dude_anim_nextgen_2_e.gif", "#000000",
 [[0, "black"], [0.45, "cyan"], [0.5, "white"], [0.55, "cyan"], [1, "black"]]],
@@ -29,9 +26,6 @@ const OBJECTS = {
     life:      "./bonus_0005.png"
 };
 
-/* ------------------------------------------------------------------
- 2 ️⃣  Build the LEVEL_TABLE – now we can safely reference OBJECTS  *
- ------------------------------------------------------------------ */
 const LEVEL_TABLE = [
     // level 0
     [
@@ -91,7 +85,7 @@ const LEVEL_TABLE = [
 ];
 
 /* ------------------------------------------------------------------
- 3 ️⃣  Assemble the final configuration object                      *
+ 2 Assemble the final configuration object                      *
  ------------------------------------------------------------------ */
 const CONFIG = {
     skins: SKINS,
